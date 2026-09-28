@@ -18,6 +18,7 @@ jobs:
           - cmake
         os:
           - macos-latest
+          - darwin-27
           - ubuntu-latest
         debug:
           - false
@@ -43,15 +44,16 @@ jobs:
       - name: Build and check
         run: |
           set -o pipefail
-          mkdir build-dir
-          cd build-dir
+          build_dir=$(mktemp -d "$RUNNER_TEMP/mathicgb-build.XXXXXXXX")
+          echo "BUILD_DIR=$build_dir" >> "$GITHUB_ENV"
+          cd "$build_dir"
           if test ${{ matrix.build-system }} = autotools
-          then ../autogen.sh
-               ../configure ${{ matrix.debug && '--enable-debug' || '' }} \
+          then "$GITHUB_WORKSPACE/autogen.sh"
+               "$GITHUB_WORKSPACE/configure" ${{ matrix.debug && '--enable-debug' || '' }} \
                             ${{ !matrix.tbb && '--without-tbb' || '' }}
                make
                make check
-          else cmake -B. -S.. -GNinja \
+          else cmake -B. -S "$GITHUB_WORKSPACE" -GNinja \
                  -DCMAKE_BUILD_TYPE=${{ matrix.debug && 'Debug' || 'Release' }} \
                  -Dwith_tbb=${{ matrix.tbb && 'ON' || 'OFF' }} 2>&1 | tee cmake.log
                grep -q "Multithreading with TBB: ${{ matrix.tbb && 'ON' || 'OFF' }}" \
@@ -62,8 +64,9 @@ jobs:
           fi
       - name: Check the distribution tarball
         if: matrix.build-system == 'autotools' && !matrix.debug && matrix.tbb
-        working-directory: build-dir
-        run: make distcheck
+        run: |
+          trap 'chmod -R u+w "$BUILD_DIR" 2>/dev/null || true' EXIT
+          make -C "$BUILD_DIR" distcheck
 
   ubsan:
     name: undefined behaviour sanitizer
